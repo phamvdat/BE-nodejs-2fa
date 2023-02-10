@@ -13,8 +13,12 @@ const dataSchema = new mongoose.Schema({
 		required: true,
 		type: String
 	},
+	secret: {
+		required: false,
+		type: String
+	},
 	twoFactorEnable: {
-		required: true,
+		required: false,
 		type: Boolean,
 	}
 })

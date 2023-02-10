@@ -13,6 +13,7 @@ router.post('/register', async (req, res) => {
 		email: req.body.email,
 		password: hashPassword,
 		twoFactorEnable: false,
+		secret: '',
 	})
 
 	try {
@@ -50,19 +51,29 @@ router.post('/two-factor-mode/:id', async (req, res) => {
 		const twoFactorEnable = req.body.twoFactorEnable
 		if (twoFactorEnable) {
 			const secret = await speakeasy.generateSecret();
-			const qrCode = await qrcode.toDataURL(secret.otpauth_url);
 			await Model.findByIdAndUpdate(
 				id, {
-				twoFactorEnable: twoFactorEnable,
-				secret: secret
+				twoFactorEnable: true,
+				secret: secret.base32
 			},
 			)
-			console.log(qrCode);
-			res.send({ qrCode })
+
+			const qrCodeUrl = speakeasy.otpauthURL({
+				secret: secret.base32,
+				label: id,
+				algorithm: 'sha1',
+				encoding: 'base32'
+			});
+
+			res.send({
+				success: true,
+				message: 'QR code generated',
+				qrCodeUrl: qrCodeUrl
+			});
 		}
 		else {
 			await Model.findByIdAndUpdate(
-				id, { twoFactorEnable: twoFactorEnable }
+				id, { twoFactorEnable: false }
 			)
 			res.json('disable success')
 		}
@@ -77,13 +88,17 @@ router.post("/verify", async (req, res) => {
 	const { userId, token } = req.body;
 	try {
 		const user = await Model.findById(userId);
-		const { base32: secret } = user.temp_secret;
+		console.log(user);
+		if (!user) {
+			return res.json('verify failed')
+		}
+		//const { base32: secret } = user.secret;
 		const verified = speakeasy.totp.verify({
-			secret,
+			secret: user.secret,
 			encoding: 'base32',
 			token
 		});
-		if (verified) {
+		if (!verified) {
 			return res.status(401).send({
 				success: false,
 				message: 'TOTP code is incorrect'
