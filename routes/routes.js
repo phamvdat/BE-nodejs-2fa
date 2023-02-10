@@ -30,13 +30,11 @@ router.post('/login', async (req, res) => {
 	try {
 		const user = await Model.findOne({ email: req.body.email });
 		if (!user) {
-			res.status(400).json({ message: "Email not found" })
-			return
+			return res.status(400).json({ message: "Email not found" })
 		}
 		const passwordValid = await bcrypt.compare(req.body.password, user.password)
 		if (!passwordValid) {
-			res.status(400).json({ message: "Email or password incorrect" })
-			return
+			return res.status(400).json({ message: "Email or password incorrect" })
 		}
 		res.status(200).json(user)
 	}
@@ -45,62 +43,60 @@ router.post('/login', async (req, res) => {
 	}
 })
 
-//Update two factor
-router.patch('/two-factor-mode/:id', async (req, res) => {
+//Update two factor: enable | disable
+router.post('/two-factor-mode/:id', async (req, res) => {
 	try {
 		const id = req.params.id;
-		const result = await Model.findByIdAndUpdate(
-			id, req.body
-		)
-		res.send(result)
+		const twoFactorEnable = req.body.twoFactorEnable
+		if (twoFactorEnable) {
+			const secret = await speakeasy.generateSecret();
+			const qrCode = await qrcode.toDataURL(secret.otpauth_url);
+			await Model.findByIdAndUpdate(
+				id, {
+				twoFactorEnable: twoFactorEnable,
+				secret: secret
+			},
+			)
+			console.log(qrCode);
+			res.send({ qrCode })
+		}
+		else {
+			await Model.findByIdAndUpdate(
+				id, { twoFactorEnable: twoFactorEnable }
+			)
+			res.json('disable success')
+		}
 	}
 	catch (error) {
 		res.status(500).json({ message: error.message })
 	}
 })
-// setup two factor authenticator
-router.post("/setup-2fa/:id", async (req, res) => {
-	const userId = req.params.id;
-	// Create a secret for the user
-	const secret = speakeasy.generateSecret({ length: 20 });
-	// Generate a QR code for the user to scan
-	const qrCode = await qrcode.toDataURL(secret.otpauth_url);
 
-	// Store the secret in the database for this user
-	const user = await Model.findByIdAndUpdate(userId, { secret: secret.base32 });
-	res.send({ qrCode });
-});
-
-
-
-
-
-
-
-
-
-// //Get all Method
-// router.get('/getAll', async (req, res) => {
-// 	try {
-// 		const data = await Model.find();
-// 		res.json(data)
-// 	}
-// 	catch (error) {
-// 		res.status(500).json({ message: error.message })
-// 	}
-// })
-
-
-// //Delete by ID Method
-// router.delete('/delete/:id', async (req, res) => {
-// 	try {
-// 		const id = req.params.id;
-// 		const data = await Model.findByIdAndDelete(id)
-// 		res.send(`Document with ${data.name} has been deleted..`)
-// 	}
-// 	catch (error) {
-// 		res.status(400).json({ message: error.message })
-// 	}
-// })
+// verify
+router.post("/verify", async (req, res) => {
+	const { userId, token } = req.body;
+	try {
+		const user = await Model.findById(userId);
+		const { base32: secret } = user.temp_secret;
+		const verified = speakeasy.totp.verify({
+			secret,
+			encoding: 'base32',
+			token
+		});
+		if (verified) {
+			return res.status(401).send({
+				success: false,
+				message: 'TOTP code is incorrect'
+			});
+		}
+		res.send({
+			success: true,
+			message: 'Login successful'
+		});
+	} catch (error) {
+		console.error(error);
+		res.status(500).json({ message: 'Error retrieving user' })
+	};
+})
 
 module.exports = router;
